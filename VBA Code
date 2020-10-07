@@ -1,0 +1,155 @@
+```VBA
+Option Explicit
+
+Function SheetExists(ByVal SheetName As String)
+    Dim WorksheetName As String
+    On Error GoTo no:
+    WorksheetName = Worksheets(SheetName).Name
+    SheetExists = True
+    Exit Function
+no:
+    SheetExists = False
+End Function
+
+
+Sub ImportData()
+Application.ScreenUpdating = False
+Application.DisplayAlerts = False
+
+    Dim wbkA As Workbook
+    Dim wbkB As Workbook
+    Dim ImportingSheet, ImportingWb, ImportingPath, DesignatedSheet, DesignatedWb, DesignatedPath, DUMPSheet, DTSheet As String
+    Dim LastGERow, LastDTRow As Long
+    
+    ImportingWb = "Gas Enquiry (Please close after use. Thank you.).xlsx"
+    ImportingPath = "Z:\Gas Enquiry\" & ImportingWb
+    DesignatedSheet = ""
+    DesignatedWb = "Diversion Tracking.xlsm"
+    DesignatedPath = "Z:\1 GNM\DPOM\10) Others\Mervyn Quek\Diversion Tracking\" & DesignatedWb
+    DUMPSheet = "DO NOT DELETE"
+    DTSheet = "DTSheet"
+     
+    'Open Diversion Tracking and remove filter
+    Set wbkA = Workbooks.Open(fileName:=DesignatedPath)
+    Workbooks(DesignatedWb).Activate
+    Sheets(DTSheet).Activate
+    Range("A3").Select
+    
+    If (ActiveSheet.AutoFilterMode And ActiveSheet.FilterMode) Or ActiveSheet.FilterMode Then
+        ActiveSheet.ShowAllData
+    End If
+    
+    'Find what is the last DT row before hiding rows with GasEnquiry No. Empty
+    LastDTRow = ActiveSheet.Range("A4", ActiveSheet.Range("A4").End(xlDown)).Rows.Count + 3
+    
+    'Hide Rows with GasEnquiry No. empty
+    ActiveSheet.ListObjects("Table2").Range.AutoFilter Field:=2, Criteria1:= _
+        "<>"
+    
+    'Import GasEnquiry No. From DTSheet to DUMP for comparison
+    ActiveSheet.Range(Cells(4, 2), Cells(LastDTRow, 2)).Select
+    Selection.Copy
+    Workbooks(DesignatedWb).Activate
+    Sheets(DUMPSheet).Activate
+    Range("K2").Select
+    ActiveSheet.Paste
+    
+    'Remove Filter from DTSheet
+    Sheets(DTSheet).Activate
+    If (ActiveSheet.AutoFilterMode And ActiveSheet.FilterMode) Or ActiveSheet.FilterMode Then
+        ActiveSheet.ShowAllData
+    End If
+    
+    'Open Gas Enquiry and remove filter
+    Set wbkB = Workbooks.Open(fileName:=ImportingPath)
+    
+    'InputBox to select Gas Enquiry sheet to import from
+    ImportingSheet = InputBox("Type in the sheet you want to import from (Case sensitive)", "Type Sheet Name", "Email 2018")
+    
+    If SheetExists(ImportingSheet) Then
+    Else
+        Workbooks(ImportingWb).Close
+        MsgBox "The sheet does not exist in Gas Enquiry. Check again"
+        End
+    End If
+    
+    'Remove Gas Enquiry Table filter
+    Workbooks(ImportingWb).Activate
+    Sheets(ImportingSheet).Activate
+    
+    If (ActiveSheet.AutoFilterMode And ActiveSheet.FilterMode) Or ActiveSheet.FilterMode Then
+        ActiveSheet.ShowAllData
+    End If
+    
+    
+    'Sort Gas Enquiry to obtain desired rows
+    ActiveSheet.Range("$A$3:$O$901").AutoFilter Field:=4, Criteria1:="DPOM"
+    ActiveSheet.Range("$A$3:$O$901").AutoFilter Field:=8, Criteria1:=Array( _
+        "Diversion", "Termination", "Verification"), Operator:= _
+        xlFilterValues
+        
+    'Import Relevant Diversion Tracking Data to DUMP from GasEnquiry for comparison
+    LastGERow = ActiveSheet.Range("B4", ActiveSheet.Range("B4").End(xlDown)).Rows.Count + 3
+     
+    ActiveSheet.Range(Cells(4, 1), Cells(LastGERow, 8)).Select
+    Selection.Copy
+    Workbooks(DesignatedWb).Activate
+    Sheets(DUMPSheet).Activate
+    Range("A2").Select
+    ActiveSheet.Paste
+    
+    'Close Gas Enquiry, such that it is irrelevant
+    Workbooks(ImportingWb).Close
+    
+        
+    'Comparing data in DUMP Sheet
+    Dim REFNOs_GE As Variant
+    REFNOs_GE = Range("A2:A" & Range("A" & Rows.Count).End(xlUp).row).Value
+
+    Dim REFNOs_DT As Variant
+    REFNOs_DT = Range("K2:K" & Range("K" & Rows.Count).End(xlUp).row).Value
+
+    Dim REFNO_GE, REFNO_DT As Variant
+    Dim match As Boolean
+    Dim GECounter, DTCounter As Long
+    
+    GECounter = 2
+    DTCounter = LastDTRow + 1
+    
+    For Each REFNO_GE In REFNOs_GE
+        match = False
+        For Each REFNO_DT In REFNOs_DT
+            If REFNO_GE = REFNO_DT Then match = True
+        Next REFNO_DT
+        If Not match Then
+            'This is required since "Officer In Charge" column is used for GECounter. Other GECounter will not reflect the correct value
+            If Worksheets(DUMPSheet).Cells(GECounter, 7).Value = "" Then
+                Worksheets(DTSheet).Cells(DTCounter, 1).Value = ".."
+            Else
+                Worksheets(DTSheet).Cells(DTCounter, 1).Value = Worksheets(DUMPSheet).Cells(GECounter, 7).Value
+            End If
+            
+            Worksheets(DTSheet).Cells(DTCounter, 2).Value = Worksheets(DUMPSheet).Cells(GECounter, 1).Value
+            Worksheets(DTSheet).Cells(DTCounter, 3).Value = Worksheets(DUMPSheet).Cells(GECounter, 2).Value
+            Worksheets(DTSheet).Cells(DTCounter, 4).Value = Worksheets(DUMPSheet).Cells(GECounter, 8).Value
+            Worksheets(DTSheet).Cells(DTCounter, 8).Value = Worksheets(DUMPSheet).Cells(GECounter, 5).Value
+            DTCounter = DTCounter + 1
+        End If
+        GECounter = GECounter + 1
+    Next
+
+    'Clear DUMP sheet contents to clear memory
+    Sheets(DUMPSheet).Activate
+    Range(Cells(2, 1), Cells(LastGERow, 11)).ClearContents
+    Range(Cells(2, 1), Cells(LastGERow, 11)).ClearFormats
+    
+    'Select DTSheet
+    Worksheets(DTSheet).Activate
+    Worksheets(DTSheet).Cells(DTCounter, 1).Select
+
+    MsgBox "Import Done"
+
+Application.ScreenUpdating = True
+Application.DisplayAlerts = True
+End Sub
+```
